@@ -1,0 +1,26 @@
+# Keys and local config
+.env
+*.env.local
+
+# Data files
+data/
+*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db.env
