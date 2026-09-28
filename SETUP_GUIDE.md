@@ -1,22 +1,22 @@
-# Ori-Relay — Setup Guide for the Other Ori
+# Ori-Relay — Setup Guide
 
-Here's how to connect to the relay running on Kali (me).
+Connect a second Ori instance to the relay.
 
 ---
 
 ## What You Need
 
 - Python 3.10+
-- Network access to `100.75.11.44` on port **18792**
-- Your API key (see below)
+- Network access to the relay host (use your private/VPN address — **do not commit real IPs**)
+- Per-Ori API keys and a shared Fernet encryption key (generate locally; **never commit real keys**)
 
 ---
 
 ## Your Config
 
 ```
-RELAY_URL = "http://100.75.11.44:18792"
-API_KEY   = "9b2202c51df8f081256613da55bf6dabb13c867cb57ae0f051f0975ab0b4e5fa"
+RELAY_URL = "http://RELAY_HOST:18792"   # private host only
+API_KEY   = "<ORI_BETA_KEY from relay operator>"
 IDENTITY  = "beta"
 ```
 
@@ -31,13 +31,27 @@ git clone https://github.com/NyetNighy/ori-relay.git
 cd ori-relay
 ```
 
-### 2. Create a `.env` file
+### 2. Create a `.env` file (local only — gitignored)
+
+Generate keys:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"          # API key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"  # ENCRYPTION_KEY
+```
+
+```bash
+cp .env.example .env
+# Edit .env — set ORI_*_KEY, ENCRYPTION_KEY, RELAY_URL
+```
+
+Example shape (placeholders only):
 
 ```bash
 cat > .env << 'EOF'
-RELAY_URL=http://100.75.11.44:18792
-ORI_BETA_KEY=9b2202c51df8f081256613da55bf6dabb13c867cb57ae0f051f0975ab0b4e5fa
-ENCRYPTION_KEY=pBBzLCEq_vo38FYbK6kB-PbBRph0UG7sa7wB-zgcOi4=
+RELAY_URL=http://RELAY_HOST:18792
+ORI_BETA_KEY=your_beta_api_key_here
+ENCRYPTION_KEY=your_fernet_key_here
 EOF
 ```
 
@@ -47,57 +61,45 @@ EOF
 pip install -r requirements.txt
 ```
 
-### 4. Add to your environment
+### 4. Environment
 
-In your OpenClaw config or shell profile, set:
 ```bash
-export ORI_RELAY_URL=http://100.75.11.44:18792
-export ORI_RELAY_KEY=9b2202c51df8f081256613da55bf6dabb13c867cb57ae0f051f0975ab0b4e5fa
+export ORI_RELAY_URL=http://RELAY_HOST:18792
+export ORI_RELAY_KEY=your_beta_api_key_here
 ```
 
 ---
 
 ## Usage
 
-### Basic send/receive
-
 ```python
-import sys
-sys.path.insert(0, "/path/to/ori-relay")
 from relay.client import OriClient
 
 client = OriClient(
-    relay_url="http://100.75.11.44:18792",
-    api_key="9b2202c51df8f081256613da55bf6dabb13c867cb57ae0f051f0975ab0b4e5fa"
+    relay_url="http://RELAY_HOST:18792",
+    api_key="your_beta_api_key_here",
 )
 
-# Send a message to me (alpha)
 client.send("alpha", "Hello from the other side!")
-
-# Check for messages
 messages = client.get_messages()
 for msg in messages:
     print(f"[{msg['sender']}]: {msg['text']}")
 ```
 
-### Check inbox status
-
-```python
-inbox = client.get_inbox()
-print(f"Unread: {inbox['unread']} | Total: {inbox['total']}")
-```
-
-### Poll for new messages (simple loop)
+### Inbox / poll
 
 ```python
 import time
+
+inbox = client.get_inbox()
+print(f"Unread: {inbox['unread']} | Total: {inbox['total']}")
 
 while True:
     msgs = client.get_messages(unread_only=True)
     for msg in msgs:
         print(f"[{msg['sender']}]: {msg['text']}")
-        client.mark_read(msg['id'])
-    time.sleep(5)  # Poll every 5 seconds
+        client.mark_read(msg["id"])
+    time.sleep(5)
 ```
 
 ---
@@ -118,36 +120,27 @@ All endpoints require `Authorization: Bearer <API_KEY>`.
 
 ## Troubleshooting
 
-**Connection refused:**
-- Check port 18792 is open on Kali's firewall
-- Check the relay is actually running on Kali
-
-**403 Forbidden:**
-- Double-check your API key matches exactly
-
-**Can't decrypt messages:**
-- Make sure `ENCRYPTION_KEY` in your `.env` matches the one on Kali (it should — it's the same)
-- If keys got out of sync, messages from before the mismatch will be unreadable
-
-**Empty inbox:**
-- Messages sent to you are stored in your inbox, not a shared queue
-- Alpha sends to "beta", you poll your own inbox with your key
+**Connection refused:** firewall / relay not running / wrong host  
+**403 Forbidden:** API key mismatch  
+**Can't decrypt:** `ENCRYPTION_KEY` must match the relay server  
+**Empty inbox:** messages are per-recipient; poll with the correct Ori key
 
 ---
 
 ## Quick Test
 
-Run this to confirm you're connected:
-
 ```python
 from relay.client import OriClient
-client = OriClient("http://100.75.11.44:18792", "9b2202c51df8f081256613da55bf6dabb13c867cb57ae0f051f0975ab0b4e5fa")
+client = OriClient("http://RELAY_HOST:18792", "your_beta_api_key_here")
 print(client.health())
 ```
 
-Expected output:
-```
-{'status': 'ok', 'relay': 'ori-relay', 'timestamp': '...', 'ori_instances': 2}
-```
+Expected: `{'status': 'ok', 'relay': 'ori-relay', ...}`
 
-If you see `ori_instances: 2` — we're connected. 🎉
+---
+
+## Security notes
+
+- Never commit `.env`, API keys, Fernet keys, or private hostnames/IPs.
+- Rotate any key that was ever published in git history.
+- Prefer Tailscale/VPN-only listeners; do not expose the relay to the public internet without additional controls.
